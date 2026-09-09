@@ -448,26 +448,42 @@ def inject_css():
                above, but the *selected value* ("English") and dropdown
                options render through BaseWeb's own internals, which follow
                the browser/OS theme independently and were going
-               near-invisible in dark mode. Force them explicitly. */
-            [data-testid="stSidebar"] [data-testid="stSelectbox"] div[data-baseweb="select"] {{
+               near-invisible in dark mode. Force them explicitly, with a
+               wide net of selectors since BaseWeb's own class names are
+               randomly hashed per build and can't be targeted directly. */
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] > div,
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] [data-baseweb="select"],
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] [data-baseweb="select"] > div {{
                 background-color: #FFFFFF !important;
                 border-radius: 10px !important;
-                border: 1px solid {BORDER} !important;
             }}
-            [data-testid="stSidebar"] [data-testid="stSelectbox"] div[data-baseweb="select"] * {{
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] [data-baseweb="select"],
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] [data-baseweb="select"] div,
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] [data-baseweb="select"] span,
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] [role="combobox"],
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] [role="combobox"] * {{
                 color: {INK} !important;
                 fill: {INK} !important;
+                -webkit-text-fill-color: {INK} !important;
                 opacity: 1 !important;
             }}
-            div[data-baseweb="popover"] ul[role="listbox"] {{
+            /* The open dropdown list renders in a portal appended to <body>,
+               outside the sidebar entirely, so it needs its own top-level rule. */
+            div[data-baseweb="popover"],
+            div[data-baseweb="menu"],
+            ul[role="listbox"] {{
                 background-color: #FFFFFF !important;
             }}
-            div[data-baseweb="popover"] ul[role="listbox"] li {{
+            div[data-baseweb="popover"] *,
+            div[data-baseweb="menu"] *,
+            ul[role="listbox"] li,
+            ul[role="listbox"] li * {{
                 color: {INK} !important;
-                background-color: #FFFFFF !important;
+                -webkit-text-fill-color: {INK} !important;
                 opacity: 1 !important;
             }}
-            div[data-baseweb="popover"] ul[role="listbox"] li:hover {{
+            ul[role="listbox"] li:hover,
+            ul[role="listbox"] li[aria-selected="true"] {{
                 background-color: {TEAL_SOFT} !important;
             }}
 
