@@ -11,6 +11,9 @@ keeping the `assets/` folder (with eye_anatomy.png) alongside it too:
 
 Designed for non-specialist healthcare workers (e.g. ASHA workers):
 one button, one image, one clear result, one explanation heatmap.
+
+Multi-language: UI strings live in translations.py and are looked up via
+t("key"). See that file's docstring for how to add more languages.
 """
 
 import csv
@@ -30,6 +33,8 @@ from fpdf import FPDF
 from PIL import Image
 from torchvision import transforms
 from torchvision.models import efficientnet_b0
+
+from translations import t, LANGUAGES
 
 # ----------------------------------------------------------------------------
 # Fix: st.markdown(unsafe_allow_html=True) renders raw HTML as literal text
@@ -65,6 +70,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Language must be initialized before anything else reads t(), since t()
+# reads st.session_state.lang.
+if "lang" not in st.session_state:
+    st.session_state.lang = "en"
+
 MODEL_PATH = "dr_model_final.pth"
 METADATA_PATH = "model_metadata.json"
 EYE_DIAGRAM_PATH = "assets/eye_anatomy.png"
@@ -77,25 +87,14 @@ RECORDS_FIELDS = [
     "grade", "severity_label", "confidence",
 ]
 
-RECOMMENDATIONS = {
-    0: "No signs of diabetic retinopathy detected. Recommend routine annual screening.",
-    1: "Mild non-proliferative DR detected. Recommend re-screening in 9-12 months and "
-       "blood sugar management counseling.",
-    2: "Moderate non-proliferative DR detected. Recommend referral to an ophthalmologist "
-       "within 3-6 months for confirmation and monitoring.",
-    3: "Severe non-proliferative DR detected. Recommend prompt referral to an "
-       "ophthalmologist within 1 month — risk of progression is significant.",
-    4: "Proliferative DR detected. Recommend URGENT referral to an ophthalmologist — "
-       "this stage carries a high risk of vision loss without timely treatment.",
-}
-
-# Medical-grade severity palette (calmer than pure red/green, colorblind-conscious)
+# Recommendations and severity labels are looked up via t("rec_<idx>") /
+# t("grade_<idx>") / t("risk_<key>") so they follow the selected language.
 SEVERITY_STYLE = {
-    0: {"color": "#1B7A43", "bg": "#EAF6EE", "label": "Low Risk",      "icon": "✅"},
-    1: {"color": "#8A6D1B", "bg": "#F6F1E1", "label": "Mild Risk",     "icon": "🟡"},
-    2: {"color": "#B8720B", "bg": "#FBEEDA", "label": "Moderate Risk", "icon": "🟠"},
-    3: {"color": "#C2540A", "bg": "#FCE7D9", "label": "High Risk",     "icon": "🔶"},
-    4: {"color": "#B3261E", "bg": "#FBE1DF", "label": "Critical Risk", "icon": "🔴"},
+    0: {"color": "#1B7A43", "bg": "#EAF6EE", "label_key": "risk_low",      "icon": "✅"},
+    1: {"color": "#8A6D1B", "bg": "#F6F1E1", "label_key": "risk_mild",     "icon": "🟡"},
+    2: {"color": "#B8720B", "bg": "#FBEEDA", "label_key": "risk_moderate", "icon": "🟠"},
+    3: {"color": "#C2540A", "bg": "#FCE7D9", "label_key": "risk_high",     "icon": "🔶"},
+    4: {"color": "#B3261E", "bg": "#FBE1DF", "label_key": "risk_critical", "icon": "🔴"},
 }
 
 # --- Design tokens ------------------------------------------------------
@@ -189,10 +188,10 @@ def inject_css():
     st.markdown(
         f"""
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap');
 
             html, body, [class*="css"] {{
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                font-family: 'Inter', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, sans-serif;
             }}
 
             .stApp {{
@@ -211,7 +210,7 @@ def inject_css():
             }}
 
             h1, h2, h3, .headline {{
-                font-family: 'Fraunces', Georgia, serif;
+                font-family: 'Fraunces', 'Noto Sans Devanagari', Georgia, serif;
             }}
 
             /* Floating animation shared by hero art */
@@ -424,6 +423,12 @@ def inject_css():
                 opacity: 1 !important;
             }}
 
+            /* Language selector select box — keep it legible against the dark sidebar */
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] label p {{
+                color: #E7EDF3 !important;
+                font-weight: 700 !important;
+            }}
+
             /* Section headers */
             .section-label {{
                 font-size: 0.78rem;
@@ -467,7 +472,7 @@ def inject_css():
                 pointer-events: none;
             }}
             .result-title {{
-                font-family: 'Fraunces', Georgia, serif;
+                font-family: 'Fraunces', 'Noto Sans Devanagari', Georgia, serif;
                 font-size: 1.65rem;
                 font-weight: 600;
                 color: var(--sev-color);
@@ -580,7 +585,7 @@ def inject_css():
                 border-right: 1px solid rgba(255,255,255,0.06);
             }}
             .sidebar-title {{
-                font-family: 'Fraunces', Georgia, serif;
+                font-family: 'Fraunces', 'Noto Sans Devanagari', Georgia, serif;
                 font-size: 1.3rem;
                 font-weight: 600;
                 color: #FBF7F0;
@@ -864,6 +869,10 @@ def load_model_and_metadata():
 # ----------------------------------------------------------------------------
 # Patient records — simple local CSV log so a health worker can save a
 # patient's ID/name with each screening and look up their history later.
+# Note: grade/severity_label are stored in English (the model's own class
+# names), independent of UI language, so historical records stay consistent
+# even if the language is switched later. They're re-labelled via t() only
+# when displayed in the sidebar list below.
 # ----------------------------------------------------------------------------
 def save_patient_record(patient_id, patient_name, pred_class, severity_label, confidence):
     file_exists = os.path.exists(RECORDS_PATH)
@@ -899,6 +908,12 @@ def load_patient_records(search=""):
 # ----------------------------------------------------------------------------
 # PDF report generation — a clean, printable summary of the screening result
 # that a health worker can download and hand to the patient or ophthalmologist.
+#
+# NOTE: this stays in English regardless of the UI language. FPDF's built-in
+# core fonts (Helvetica etc.) don't support Devanagari or other Indic
+# scripts, and referral reports going to a specialist are conventionally in
+# English in India anyway. See translations.py's docstring if you want to
+# add a Hindi PDF via an embedded Unicode font.
 # ----------------------------------------------------------------------------
 def _np_img_to_bytes(img_array):
     """RGB numpy array -> PNG bytes, for embedding into the PDF."""
@@ -994,18 +1009,18 @@ def generate_pdf_report(
     return bytes(pdf.output(dest="S"))
 
 
-@st.dialog("Screening report ready")
+@st.dialog(t("report_dialog_header"))
 def show_report_download_dialog():
-    st.write("Your patient's screening report has been generated.")
+    st.write(t("report_dialog_body"))
     st.download_button(
-        label="⬇️ Download Report (PDF)",
+        label=t("download_report_button"),
         data=st.session_state["report_pdf_bytes"],
         file_name=st.session_state["report_filename"],
         mime="application/pdf",
         use_container_width=True,
         type="primary",
     )
-    if st.button("Close", use_container_width=True):
+    if st.button(t("close_button"), use_container_width=True):
         st.rerun()
 
 
@@ -1139,17 +1154,26 @@ def overlay_heatmap(orig_img, cam, alpha=0.42):
 # ----------------------------------------------------------------------------
 def render_sidebar():
     with st.sidebar:
-        st.markdown('<div class="sidebar-title">👁️ Drishti</div>', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-sub">SIH26038 · Explainable AI for Rural Screening</div>', unsafe_allow_html=True)
+        # Language selector goes first — everything else in the sidebar (and
+        # the rest of the page, on the next rerun) reads t() using whatever
+        # is chosen here.
+        lang_codes = list(LANGUAGES.keys())
+        selected_lang = st.selectbox(
+            t("language_label"),
+            options=lang_codes,
+            format_func=lambda code: LANGUAGES[code],
+            index=lang_codes.index(st.session_state.lang),
+            key="lang_selectbox",
+        )
+        if selected_lang != st.session_state.lang:
+            st.session_state.lang = selected_lang
+            st.rerun()
 
-        st.markdown('<div class="sidebar-label">HOW IT WORKS</div>', unsafe_allow_html=True)
-        steps = [
-            "Upload a retinal fundus photo",
-            "AI analyzes it in seconds",
-            "See the severity grade and confidence",
-            "View the heatmap explaining why",
-            "Follow the referral recommendation",
-        ]
+        st.markdown(f'<div class="sidebar-title">{t("app_title")}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sidebar-sub">{t("app_subtitle")}</div>', unsafe_allow_html=True)
+
+        st.markdown(f'<div class="sidebar-label">{t("how_it_works")}</div>', unsafe_allow_html=True)
+        steps = [t("step_1"), t("step_2"), t("step_3"), t("step_4"), t("step_5")]
         for i, s in enumerate(steps, 1):
             st.markdown(
                 f'<div class="step-item"><div class="step-num">{i}</div><div>{s}</div></div>',
@@ -1157,48 +1181,50 @@ def render_sidebar():
             )
 
         st.markdown("---")
-        st.markdown('<div class="sidebar-label">SEVERITY SCALE</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sidebar-label">{t("severity_scale")}</div>', unsafe_allow_html=True)
         for idx, style in SEVERITY_STYLE.items():
-            names = {0: "No DR", 1: "Mild", 2: "Moderate", 3: "Severe", 4: "Proliferative DR"}
+            grade_name = t(f"grade_{idx}")
             st.markdown(
                 f'<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;font-size:0.85rem;">'
                 f'<span style="width:10px;height:10px;border-radius:50%;background:{style["color"]};display:inline-block;"></span>'
-                f'<span>Grade {idx} — {names[idx]}</span></div>',
+                f'<span>{t("grade_word")} {idx} — {grade_name}</span></div>',
                 unsafe_allow_html=True,
             )
 
         st.markdown("---")
-        st.markdown('<div class="sidebar-label">EYE ANATOMY REFERENCE</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sidebar-label">{t("eye_anatomy_ref")}</div>', unsafe_allow_html=True)
         if os.path.exists(EYE_DIAGRAM_PATH):
-            with st.expander("View labeled diagram"):
+            with st.expander(t("view_labeled_diagram")):
                 st.image(EYE_DIAGRAM_PATH, use_container_width=True)
-                st.caption("The retina lines the back of the eye — this is what the fundus camera photographs.")
+                st.caption(t("eye_anatomy_caption"))
 
         st.markdown("---")
-        st.markdown('<div class="sidebar-label">PATIENT RECORDS</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sidebar-label">{t("records_label")}</div>', unsafe_allow_html=True)
         search_query = st.text_input(
-            "Search by Patient ID or name",
+            t("records_search_placeholder"),
             key="record_search",
-            placeholder="e.g. P-1024 or Ramesh",
+            placeholder=t("records_search_placeholder"),
             label_visibility="collapsed",
         )
         records = load_patient_records(search_query)
         if records:
-            with st.expander(f"📋 {len(records)} saved screening(s)", expanded=bool(search_query)):
+            with st.expander(t("records_expander_label").format(n=len(records)), expanded=bool(search_query)):
                 for r in records[:20]:
+                    patient_display_name = r["patient_name"] or "—"
+                    id_display = r["patient_id"] or t("no_id_label")
                     st.markdown(
                         f'<div class="step-item" style="flex-direction:column;align-items:flex-start;gap:0.15rem;">'
-                        f'<div style="font-weight:700;">{r["patient_name"] or "—"} '
-                        f'<span style="opacity:0.65;font-weight:400;">({r["patient_id"] or "no ID"})</span></div>'
-                        f'<div style="font-size:0.78rem;opacity:0.85;">{r["timestamp"]} · Grade {r["grade"]} — '
+                        f'<div style="font-weight:700;">{patient_display_name} '
+                        f'<span style="opacity:0.65;font-weight:400;">({id_display})</span></div>'
+                        f'<div style="font-size:0.78rem;opacity:0.85;">{r["timestamp"]} · {t("grade_word")} {r["grade"]} — '
                         f'{r["severity_label"]} · {r["confidence"]}%</div></div>',
                         unsafe_allow_html=True,
                     )
         else:
-            st.caption("No saved screenings yet." if not search_query else "No matches found.")
+            st.caption(t("no_records_yet") if not search_query else t("no_matches_found"))
 
         st.markdown("---")
-        st.caption("Built for non-specialist health workers (e.g. ASHA workers) to enable faster, explainable DR triage in low-resource settings.")
+        st.caption(t("sidebar_footer"))
 
 
 # ----------------------------------------------------------------------------
@@ -1217,10 +1243,9 @@ st.markdown(
         <div class="glass-orb orb3"></div>
         <div class="hero-inner">
             <div class="hero-copy">
-                <div class="hero-tag">Smart India Hackathon 2026 — Clean &amp; Green Technology</div>
-                <h1>See what the <em>retina</em> reveals</h1>
-                <p>Upload a retinal fundus photo to get an instant, explainable AI screening —
-                built for community health workers where ophthalmologists are hard to reach.</p>
+                <div class="hero-tag">{t("hero_tag")}</div>
+                <h1>{t("hero_title")}</h1>
+                <p>{t("hero_body")}</p>
             </div>
             <div class="hero-eye">{EYE_MOTIF_SVG}</div>
         </div>
@@ -1232,10 +1257,7 @@ st.markdown(
 model, metadata = load_model_and_metadata()
 
 if model is None:
-    st.error(
-        "⚠️ Model files not found. Place `dr_model_final.pth` and `model_metadata.json` "
-        "(exported from the Kaggle notebook) in the same folder as this app, then restart Streamlit."
-    )
+    st.error(t("model_missing_error"))
     st.stop()
 
 class_names = {int(k): v for k, v in metadata["class_names"].items()}
@@ -1250,19 +1272,19 @@ infer_tfms = transforms.Compose([
 target_layer = model.features[-1]
 gradcam = GradCAM(model, target_layer)
 
-st.markdown('<div class="section-label">Patient details</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="section-label">{t("patient_details_label")}</div>', unsafe_allow_html=True)
 st.markdown('<div class="upload-card" data-tilt="4" style="padding:1.1rem 1.3rem;">', unsafe_allow_html=True)
 pcol1, pcol2 = st.columns(2)
 with pcol1:
-    patient_id = st.text_input("Patient ID", key="patient_id", placeholder="e.g. P-1024")
+    patient_id = st.text_input(t("patient_id_label"), key="patient_id", placeholder=t("patient_id_placeholder"))
 with pcol2:
-    patient_name = st.text_input("Patient Name", key="patient_name", placeholder="e.g. Ramesh Kumar")
+    patient_name = st.text_input(t("patient_name_label"), key="patient_name", placeholder=t("patient_name_placeholder"))
 st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-label">Upload fundus image</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="section-label">{t("upload_section_label")}</div>', unsafe_allow_html=True)
 st.markdown('<div class="upload-card" data-tilt="4">', unsafe_allow_html=True)
 uploaded_file = st.file_uploader(
-    "Drop a JPG or PNG retina photo here",
+    t("upload_prompt"),
     type=["jpg", "jpeg", "png"],
     label_visibility="collapsed",
 )
@@ -1270,15 +1292,12 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 if uploaded_file is not None and not patient_id.strip():
     st.markdown(
-        """
+        f"""
         <div class="low-conf-warning">
             <div>🪪</div>
             <div>
-                <div class="lcw-title">Patient ID required</div>
-                <div class="lcw-body">
-                    Please enter a Patient ID above before screening, so this result can be
-                    saved and looked up later.
-                </div>
+                <div class="lcw-title">{t("patient_id_required_title")}</div>
+                <div class="lcw-body">{t("patient_id_required_body")}</div>
             </div>
         </div>
         """,
@@ -1292,17 +1311,12 @@ if uploaded_file is not None:
     looks_like_fundus, _aspect_ratio, _warm_frac = is_likely_fundus_image(pil_img)
     if not looks_like_fundus:
         st.markdown(
-            """
+            f"""
             <div class="low-conf-warning">
                 <div>🚫</div>
                 <div>
-                    <div class="lcw-title">This doesn't look like a retinal photo</div>
-                    <div class="lcw-body">
-                        The uploaded image doesn't match the color and shape pattern of a
-                        retinal fundus photograph. Please upload a genuine fundus image —
-                        captured with a fundus camera and showing the retina clearly — and
-                        try again.
-                    </div>
+                    <div class="lcw-title">{t("not_fundus_title")}</div>
+                    <div class="lcw-body">{t("not_fundus_body")}</div>
                 </div>
             </div>
             """,
@@ -1314,17 +1328,12 @@ if uploaded_file is not None:
 
     if blur_score < BLUR_THRESHOLD:
         st.markdown(
-            """
+            f"""
             <div class="low-conf-warning">
                 <div>🔍</div>
                 <div>
-                    <div class="lcw-title">Image is too blurry to screen reliably</div>
-                    <div class="lcw-body">
-                        The uploaded photo does not appear sharp enough for accurate analysis.
-                        Please upload a fresh, clear image — steady the camera, ensure good
-                        lighting, and confirm the retina is in focus before capturing — and
-                        try again.
-                    </div>
+                    <div class="lcw-title">{t("blurry_title")}</div>
+                    <div class="lcw-body">{t("blurry_body")}</div>
                 </div>
             </div>
             """,
@@ -1332,7 +1341,7 @@ if uploaded_file is not None:
         )
         st.stop()
 
-    with st.spinner("🔎 Analyzing retinal image..."):
+    with st.spinner(t("analyzing_spinner")):
         processed = preprocess_image(pil_img, img_size)
         tensor = infer_tfms(processed).unsqueeze(0)
         tensor.requires_grad_(True)
@@ -1343,6 +1352,8 @@ if uploaded_file is not None:
     severity_label = class_names[pred_class]
     confidence = probs[pred_class] * 100
     style = SEVERITY_STYLE[pred_class]
+    style_label = t(style["label_key"])
+    recommendation_text = t(f"rec_{pred_class}")
 
     save_patient_record(patient_id, patient_name, pred_class, severity_label, confidence)
 
@@ -1351,7 +1362,7 @@ if uploaded_file is not None:
     # unrelated widget interactions doesn't reopen the popup every time).
     report_pdf_bytes = generate_pdf_report(
         patient_id, patient_name, pred_class, severity_label, confidence,
-        style, RECOMMENDATIONS[pred_class], processed, overlay,
+        {**style, "label": style_label}, recommendation_text, processed, overlay,
     )
     safe_id = (patient_id.strip() or "patient").replace(" ", "_")
     st.session_state["report_pdf_bytes"] = report_pdf_bytes
@@ -1363,7 +1374,7 @@ if uploaded_file is not None:
         show_report_download_dialog()
 
     st.markdown(
-        f'<div class="section-label">Patient</div>'
+        f'<div class="section-label">{t("patient_section_label")}</div>'
         f'<div style="margin:-0.4rem 0 1rem 0; font-size:0.95rem; color:{INK_SOFT};">'
         f'🪪 <strong>{patient_name.strip() or "—"}</strong> &nbsp;·&nbsp; ID: <strong>{patient_id.strip()}</strong>'
         f'</div>',
@@ -1373,17 +1384,17 @@ if uploaded_file is not None:
     col1, col2 = st.columns(2, gap="large")
     with col1:
         st.image(processed, use_container_width=True)
-        st.markdown('<div class="img-caption">📷 Uploaded image (preprocessed)</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="img-caption">{t("original_image_caption")}</div>', unsafe_allow_html=True)
     with col2:
         st.image(overlay, use_container_width=True)
-        st.markdown('<div class="img-caption">🔥 Grad-CAM — AI attention map</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="img-caption">{t("heatmap_caption")}</div>', unsafe_allow_html=True)
 
     st.markdown(
         f"""
         <div class="result-card" data-tilt="7" style="--sev-color: {style['color']}; --sev-bg: {style['bg']};">
-            <p class="result-sub">{style['icon']} {style['label']} · Grade {pred_class}</p>
+            <p class="result-sub">{style['icon']} {style_label} · {t("grade_word")} {pred_class}</p>
             <p class="result-title">{severity_label}</p>
-            <span class="confidence-pill">Confidence: {confidence:.1f}%</span>
+            <span class="confidence-pill">{t("confidence_label")}: {confidence:.1f}%</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1398,24 +1409,23 @@ if uploaded_file is not None:
             <div class="low-conf-warning">
                 <div>⚠️</div>
                 <div>
-                    <div class="lcw-title">Low-confidence prediction — human review recommended</div>
-                    <div class="lcw-body">
-                        The model is not strongly decided on this image (confidence {confidence:.1f}%).
-                        The next most likely grade is <strong>{class_names[second_idx]}</strong>
-                        ({probs[second_idx]*100:.1f}%). Please have this case reviewed by a
-                        healthcare professional rather than relying on the AI grade alone.
-                    </div>
+                    <div class="lcw-title">{t("low_conf_review_title")}</div>
+                    <div class="lcw-body">{t("low_conf_review_body").format(
+                        confidence=f"{confidence:.1f}",
+                        grade=f"<strong>{class_names[second_idx]}</strong>",
+                        prob=f"{probs[second_idx]*100:.1f}",
+                    )}</div>
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    st.markdown('<div class="section-label">Recommended action</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="rec-box">💡 {RECOMMENDATIONS[pred_class]}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="section-label">{t("recommended_action_label")}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="rec-box">💡 {recommendation_text}</div>', unsafe_allow_html=True)
 
     st.download_button(
-        label="⬇️ Download Report (PDF)",
+        label=t("download_report_button"),
         data=st.session_state["report_pdf_bytes"],
         file_name=st.session_state["report_filename"],
         mime="application/pdf",
@@ -1423,17 +1433,15 @@ if uploaded_file is not None:
         type="primary",
     )
 
-    with st.expander("📊 View full confidence breakdown"):
+    with st.expander(t("confidence_breakdown_label")):
         for cls_idx in sorted(class_names.keys()):
-            st.progress(float(probs[cls_idx]), text=f"{class_names[cls_idx]}: {probs[cls_idx]*100:.1f}%")
+            grade_label = t(f"grade_{cls_idx}")
+            st.progress(float(probs[cls_idx]), text=f"{grade_label}: {probs[cls_idx]*100:.1f}%")
 
     st.markdown(
-        """
+        f"""
         <div class="disclaimer">
-            ⚠️ <strong>This is an AI-assisted screening tool</strong>, intended to support — not replace —
-            clinical judgment. Red/orange regions in the heatmap indicate areas the model weighted most
-            heavily (e.g. possible microaneurysms, hemorrhages, or exudates). Always have a qualified
-            ophthalmologist review before treatment decisions.
+            {t("disclaimer")}
         </div>
         """,
         unsafe_allow_html=True,
@@ -1449,8 +1457,8 @@ else:
                     {EYE_MOTIF_SVG.replace('width="240" height="240"', 'width="96" height="96"')}
                 </div>
             </div>
-            <div style="font-family:'Fraunces', Georgia, serif; font-weight:600; font-size: 1.15rem; color: {INK};">No image uploaded yet</div>
-            <div style="font-size: 0.9rem; margin-top: 0.3rem; color: {MUTED};">Upload a fundus photo above to begin screening</div>
+            <div style="font-family:'Fraunces', 'Noto Sans Devanagari', Georgia, serif; font-weight:600; font-size: 1.15rem; color: {INK};">{t("no_image_title")}</div>
+            <div style="font-size: 0.9rem; margin-top: 0.3rem; color: {MUTED};">{t("no_image_body")}</div>
         </div>
         """,
         unsafe_allow_html=True,
