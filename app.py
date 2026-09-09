@@ -14,6 +14,7 @@ one button, one image, one clear result, one explanation heatmap.
 """
 
 import csv
+import io
 import json
 import os
 from datetime import datetime
@@ -25,6 +26,7 @@ import streamlit.components.v1 as components
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from fpdf import FPDF
 from PIL import Image
 from torchvision import transforms
 from torchvision.models import efficientnet_b0
@@ -895,6 +897,119 @@ def load_patient_records(search=""):
 
 
 # ----------------------------------------------------------------------------
+# PDF report generation — a clean, printable summary of the screening result
+# that a health worker can download and hand to the patient or ophthalmologist.
+# ----------------------------------------------------------------------------
+def _np_img_to_bytes(img_array):
+    """RGB numpy array -> PNG bytes, for embedding into the PDF."""
+    buf = io.BytesIO()
+    Image.fromarray(img_array.astype("uint8")).save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+
+def generate_pdf_report(
+    patient_id,
+    patient_name,
+    pred_class,
+    severity_label,
+    confidence,
+    style,
+    recommendation,
+    processed_img,
+    overlay_img,
+):
+    pdf = FPDF(unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.add_page()
+
+    # --- Header -----------------------------------------------------------
+    pdf.set_fill_color(11, 30, 51)  # INK
+    pdf.rect(0, 0, 210, 28, style="F")
+    pdf.set_xy(12, 8)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 8, "Drishti - DR Screening Report", ln=True)
+    pdf.set_x(12)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(220, 228, 236)
+    pdf.cell(0, 6, "Explainable AI Screening for Diabetic Retinopathy", ln=True)
+
+    pdf.set_text_color(20, 20, 20)
+    pdf.ln(14)
+
+    # --- Patient details ----------------------------------------------------
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Patient Details", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.cell(0, 7, f"Patient Name: {patient_name.strip() or '-'}", ln=True)
+    pdf.cell(0, 7, f"Patient ID: {patient_id.strip() or '-'}", ln=True)
+    pdf.cell(0, 7, f"Report generated: {datetime.now().strftime('%d %b %Y, %I:%M %p')}", ln=True)
+    pdf.ln(4)
+
+    # --- Result summary -----------------------------------------------------
+    sev_rgb = tuple(int(style["color"].lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Screening Result", ln=True)
+    pdf.set_fill_color(*sev_rgb)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 10, f"  {style['label']} - Grade {pred_class}: {severity_label}", ln=True, fill=True)
+    pdf.set_text_color(20, 20, 20)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.cell(0, 8, f"Model confidence: {confidence:.1f}%", ln=True)
+    pdf.ln(2)
+
+    # --- Images side by side -------------------------------------------------
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Retinal Images", ln=True)
+    img_w = 85
+    y_before = pdf.get_y()
+    pdf.image(_np_img_to_bytes(processed_img), x=12, y=y_before, w=img_w)
+    pdf.image(_np_img_to_bytes(overlay_img), x=12 + img_w + 6, y=y_before, w=img_w)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_y(y_before + img_w * (processed_img.shape[0] / processed_img.shape[1]) + 2)
+    pdf.cell(img_w, 5, "Uploaded image (preprocessed)", align="C")
+    pdf.cell(6, 5, "")
+    pdf.cell(img_w, 5, "Grad-CAM - AI attention map", align="C", ln=True)
+    pdf.ln(6)
+
+    # --- Recommendation -------------------------------------------------------
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Recommended Action", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 6.5, recommendation)
+    pdf.ln(4)
+
+    # --- Disclaimer -------------------------------------------------------
+    pdf.set_font("Helvetica", "I", 9)
+    pdf.set_text_color(110, 90, 20)
+    pdf.multi_cell(
+        0, 5,
+        "Disclaimer: This is an AI-assisted screening tool, intended to support - not replace - "
+        "clinical judgment. Always have a qualified ophthalmologist review this result before any "
+        "treatment decisions."
+    )
+
+    return bytes(pdf.output(dest="S"))
+
+
+@st.dialog("Screening report ready")
+def show_report_download_dialog():
+    st.write("Your patient's screening report has been generated.")
+    st.download_button(
+        label="⬇️ Download Report (PDF)",
+        data=st.session_state["report_pdf_bytes"],
+        file_name=st.session_state["report_filename"],
+        mime="application/pdf",
+        use_container_width=True,
+        type="primary",
+    )
+    if st.button("Close", use_container_width=True):
+        st.rerun()
+
+
+# ----------------------------------------------------------------------------
 # Preprocessing (must mirror training-time preprocessing exactly)
 # ----------------------------------------------------------------------------
 def crop_black_border(img, tol=7):
@@ -1231,6 +1346,22 @@ if uploaded_file is not None:
 
     save_patient_record(patient_id, patient_name, pred_class, severity_label, confidence)
 
+    # Build the downloadable PDF report and pop up a "download it" dialog once
+    # per new result (guarded by a signature so re-running the script on
+    # unrelated widget interactions doesn't reopen the popup every time).
+    report_pdf_bytes = generate_pdf_report(
+        patient_id, patient_name, pred_class, severity_label, confidence,
+        style, RECOMMENDATIONS[pred_class], processed, overlay,
+    )
+    safe_id = (patient_id.strip() or "patient").replace(" ", "_")
+    st.session_state["report_pdf_bytes"] = report_pdf_bytes
+    st.session_state["report_filename"] = f"Drishti_Report_{safe_id}.pdf"
+
+    result_signature = f"{uploaded_file.name}-{uploaded_file.size}-{patient_id.strip()}"
+    if st.session_state.get("report_popup_shown_for") != result_signature:
+        st.session_state["report_popup_shown_for"] = result_signature
+        show_report_download_dialog()
+
     st.markdown(
         f'<div class="section-label">Patient</div>'
         f'<div style="margin:-0.4rem 0 1rem 0; font-size:0.95rem; color:{INK_SOFT};">'
@@ -1282,6 +1413,15 @@ if uploaded_file is not None:
 
     st.markdown('<div class="section-label">Recommended action</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="rec-box">💡 {RECOMMENDATIONS[pred_class]}</div>', unsafe_allow_html=True)
+
+    st.download_button(
+        label="⬇️ Download Report (PDF)",
+        data=st.session_state["report_pdf_bytes"],
+        file_name=st.session_state["report_filename"],
+        mime="application/pdf",
+        use_container_width=True,
+        type="primary",
+    )
 
     with st.expander("📊 View full confidence breakdown"):
         for cls_idx in sorted(class_names.keys()):
