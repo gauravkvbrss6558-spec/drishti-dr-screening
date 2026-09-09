@@ -104,6 +104,12 @@ MUTED = "#6B7A8C"
 # from the alternatives — flag it so a human reviewer knows to double-check.
 LOW_CONFIDENCE_THRESHOLD = 65.0
 
+# Below this variance-of-Laplacian score, the image is considered too blurry
+# to screen reliably. Lower values = fewer sharp edges = blurrier image.
+# 100 is a common general-purpose default; tune it against real fundus photos
+# from your camera/devices if you see false positives or negatives.
+BLUR_THRESHOLD = 100.0
+
 
 # ----------------------------------------------------------------------------
 # A small hand-drawn eye motif, used as the hero's centerpiece visual instead
@@ -846,6 +852,18 @@ def preprocess_image(pil_img, size):
     return img
 
 
+def compute_blur_score(pil_img):
+    """Variance of the Laplacian — a standard, lightweight focus measure.
+
+    A sharp, in-focus image has lots of high-frequency detail (crisp edges,
+    vessel borders, etc.), which the Laplacian responds to strongly, giving
+    a high variance. A blurry image has smoothed-out edges, so the variance
+    is low. This runs in milliseconds and needs no extra model.
+    """
+    gray = cv2.cvtColor(np.array(pil_img.convert("RGB")), cv2.COLOR_RGB2GRAY)
+    return cv2.Laplacian(gray, cv2.CV_64F).var()
+
+
 # ----------------------------------------------------------------------------
 # Grad-CAM
 # ----------------------------------------------------------------------------
@@ -999,6 +1017,27 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 if uploaded_file is not None:
     pil_img = Image.open(uploaded_file)
+    blur_score = compute_blur_score(pil_img)
+
+    if blur_score < BLUR_THRESHOLD:
+        st.markdown(
+            """
+            <div class="low-conf-warning">
+                <div>🔍</div>
+                <div>
+                    <div class="lcw-title">Image is too blurry to screen reliably</div>
+                    <div class="lcw-body">
+                        The uploaded photo does not appear sharp enough for accurate analysis.
+                        Please upload a fresh, clear image — steady the camera, ensure good
+                        lighting, and confirm the retina is in focus before capturing — and
+                        try again.
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.stop()
 
     with st.spinner("🔎 Analyzing retinal image..."):
         processed = preprocess_image(pil_img, img_size)
