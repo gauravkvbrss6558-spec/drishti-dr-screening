@@ -13,8 +13,10 @@ Designed for non-specialist healthcare workers (e.g. ASHA workers):
 one button, one image, one clear result, one explanation heatmap.
 """
 
+import csv
 import json
 import os
+from datetime import datetime
 
 import cv2
 import numpy as np
@@ -64,6 +66,14 @@ st.set_page_config(
 MODEL_PATH = "dr_model_final.pth"
 METADATA_PATH = "model_metadata.json"
 EYE_DIAGRAM_PATH = "assets/eye_anatomy.png"
+
+# Local CSV log of every screening, keyed by patient ID/name — lets a health
+# worker look up a patient's past screenings without re-typing anything.
+RECORDS_PATH = "patient_records.csv"
+RECORDS_FIELDS = [
+    "timestamp", "patient_id", "patient_name",
+    "grade", "severity_label", "confidence",
+]
 
 RECOMMENDATIONS = {
     0: "No signs of diabetic retinopathy detected. Recommend routine annual screening.",
@@ -825,6 +835,41 @@ def load_model_and_metadata():
 
 
 # ----------------------------------------------------------------------------
+# Patient records — simple local CSV log so a health worker can save a
+# patient's ID/name with each screening and look up their history later.
+# ----------------------------------------------------------------------------
+def save_patient_record(patient_id, patient_name, pred_class, severity_label, confidence):
+    file_exists = os.path.exists(RECORDS_PATH)
+    with open(RECORDS_PATH, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=RECORDS_FIELDS)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow({
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "patient_id": patient_id.strip(),
+            "patient_name": patient_name.strip(),
+            "grade": pred_class,
+            "severity_label": severity_label,
+            "confidence": f"{confidence:.1f}",
+        })
+
+
+def load_patient_records(search=""):
+    if not os.path.exists(RECORDS_PATH):
+        return []
+    with open(RECORDS_PATH, "r", newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    if search:
+        search_lower = search.strip().lower()
+        rows = [
+            r for r in rows
+            if search_lower in r.get("patient_id", "").lower()
+            or search_lower in r.get("patient_name", "").lower()
+        ]
+    return list(reversed(rows))  # most recent first
+
+
+# ----------------------------------------------------------------------------
 # Preprocessing (must mirror training-time preprocessing exactly)
 # ----------------------------------------------------------------------------
 def crop_black_border(img, tol=7):
@@ -990,6 +1035,29 @@ def render_sidebar():
                 st.caption("The retina lines the back of the eye — this is what the fundus camera photographs.")
 
         st.markdown("---")
+        st.markdown('<div class="sidebar-label">PATIENT RECORDS</div>', unsafe_allow_html=True)
+        search_query = st.text_input(
+            "Search by Patient ID or name",
+            key="record_search",
+            placeholder="e.g. P-1024 or Ramesh",
+            label_visibility="collapsed",
+        )
+        records = load_patient_records(search_query)
+        if records:
+            with st.expander(f"📋 {len(records)} saved screening(s)", expanded=bool(search_query)):
+                for r in records[:20]:
+                    st.markdown(
+                        f'<div class="step-item" style="flex-direction:column;align-items:flex-start;gap:0.15rem;">'
+                        f'<div style="font-weight:700;">{r["patient_name"] or "—"} '
+                        f'<span style="opacity:0.65;font-weight:400;">({r["patient_id"] or "no ID"})</span></div>'
+                        f'<div style="font-size:0.78rem;opacity:0.85;">{r["timestamp"]} · Grade {r["grade"]} — '
+                        f'{r["severity_label"]} · {r["confidence"]}%</div></div>',
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.caption("No saved screenings yet." if not search_query else "No matches found.")
+
+        st.markdown("---")
         st.caption("Built for non-specialist health workers (e.g. ASHA workers) to enable faster, explainable DR triage in low-resource settings.")
 
 
@@ -1042,6 +1110,15 @@ infer_tfms = transforms.Compose([
 target_layer = model.features[-1]
 gradcam = GradCAM(model, target_layer)
 
+st.markdown('<div class="section-label">Patient details</div>', unsafe_allow_html=True)
+st.markdown('<div class="upload-card" data-tilt="4" style="padding:1.1rem 1.3rem;">', unsafe_allow_html=True)
+pcol1, pcol2 = st.columns(2)
+with pcol1:
+    patient_id = st.text_input("Patient ID", key="patient_id", placeholder="e.g. P-1024")
+with pcol2:
+    patient_name = st.text_input("Patient Name", key="patient_name", placeholder="e.g. Ramesh Kumar")
+st.markdown('</div>', unsafe_allow_html=True)
+
 st.markdown('<div class="section-label">Upload fundus image</div>', unsafe_allow_html=True)
 st.markdown('<div class="upload-card" data-tilt="4">', unsafe_allow_html=True)
 uploaded_file = st.file_uploader(
@@ -1050,6 +1127,24 @@ uploaded_file = st.file_uploader(
     label_visibility="collapsed",
 )
 st.markdown('</div>', unsafe_allow_html=True)
+
+if uploaded_file is not None and not patient_id.strip():
+    st.markdown(
+        """
+        <div class="low-conf-warning">
+            <div>🪪</div>
+            <div>
+                <div class="lcw-title">Patient ID required</div>
+                <div class="lcw-body">
+                    Please enter a Patient ID above before screening, so this result can be
+                    saved and looked up later.
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.stop()
 
 if uploaded_file is not None:
     pil_img = Image.open(uploaded_file)
@@ -1108,6 +1203,16 @@ if uploaded_file is not None:
     severity_label = class_names[pred_class]
     confidence = probs[pred_class] * 100
     style = SEVERITY_STYLE[pred_class]
+
+    save_patient_record(patient_id, patient_name, pred_class, severity_label, confidence)
+
+    st.markdown(
+        f'<div class="section-label">Patient</div>'
+        f'<div style="margin:-0.4rem 0 1rem 0; font-size:0.95rem; color:{INK_SOFT};">'
+        f'🪪 <strong>{patient_name.strip() or "—"}</strong> &nbsp;·&nbsp; ID: <strong>{patient_id.strip()}</strong>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     col1, col2 = st.columns(2, gap="large")
     with col1:
