@@ -397,6 +397,31 @@ def inject_css():
                 padding: 0.3rem 0.6rem 0.7rem 0.6rem;
             }}
 
+            /* Patient ID / Patient Name input labels — force a visible,
+               theme-independent color. Without this, on a phone set to dark
+               mode Streamlit auto-switches to its dark theme and these
+               labels render near-white on our light upload-card background,
+               making them unreadable. */
+            [data-testid="stTextInput"] label,
+            [data-testid="stTextInput"] label p,
+            [data-testid="stWidgetLabel"] p {{
+                color: {INK_SOFT} !important;
+                font-weight: 600 !important;
+                opacity: 1 !important;
+            }}
+
+            [data-testid="stTextInput"] input {{
+                color: {INK} !important;
+                background-color: #FFFFFF !important;
+                border: 1px solid {BORDER} !important;
+                border-radius: 10px !important;
+            }}
+
+            [data-testid="stTextInput"] input::placeholder {{
+                color: {MUTED} !important;
+                opacity: 1 !important;
+            }}
+
             /* Section headers */
             .section-label {{
                 font-size: 0.78rem;
