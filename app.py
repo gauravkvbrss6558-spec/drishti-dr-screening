@@ -852,6 +852,42 @@ def preprocess_image(pil_img, size):
     return img
 
 
+def is_likely_fundus_image(pil_img, min_warm_frac=0.35, aspect_tol=0.35):
+    """Heuristic sanity check: does this look like a retinal fundus photo?
+
+    This is NOT a trained classifier — it's a fast, rule-based filter to
+    catch obviously wrong uploads (selfies, screenshots, documents, random
+    photos) before they reach the DR model. It looks for two things real
+    fundus photos reliably have:
+
+      1. A warm, reddish-orange color cast — the retina, optic disc, and
+         vasculature give fundus photos a very distinctive palette that
+         most everyday photos don't share.
+      2. A roughly circular/square capture region — fundus cameras crop to
+         a circle (often on a black background), so after removing any
+         black border the remaining image is close to square, not a long
+         thin rectangle like a typical document or landscape photo.
+
+    Returns (looks_like_fundus: bool, aspect_ratio: float, warm_frac: float)
+    so the caller can log/display the raw scores if useful.
+    """
+    img = np.array(pil_img.convert("RGB"))
+    cropped = crop_black_border(img)
+
+    h, w = cropped.shape[:2]
+    aspect_ratio = min(h, w) / max(h, w) if max(h, w) > 0 else 0
+    is_squarish = aspect_ratio >= (1 - aspect_tol)
+
+    hsv = cv2.cvtColor(cropped, cv2.COLOR_RGB2HSV)
+    hue, sat = hsv[:, :, 0], hsv[:, :, 1]
+    # Red/orange hues wrap around 0 on OpenCV's 0-179 hue scale.
+    warm_mask = ((hue <= 25) | (hue >= 165)) & (sat > 40)
+    warm_frac = float(warm_mask.mean())
+    is_warm_toned = warm_frac >= min_warm_frac
+
+    return (is_squarish and is_warm_toned), aspect_ratio, warm_frac
+
+
 def compute_blur_score(pil_img):
     """Variance of the Laplacian — a standard, lightweight focus measure.
 
@@ -1017,6 +1053,28 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 if uploaded_file is not None:
     pil_img = Image.open(uploaded_file)
+
+    looks_like_fundus, _aspect_ratio, _warm_frac = is_likely_fundus_image(pil_img)
+    if not looks_like_fundus:
+        st.markdown(
+            """
+            <div class="low-conf-warning">
+                <div>🚫</div>
+                <div>
+                    <div class="lcw-title">This doesn't look like a retinal photo</div>
+                    <div class="lcw-body">
+                        The uploaded image doesn't match the color and shape pattern of a
+                        retinal fundus photograph. Please upload a genuine fundus image —
+                        captured with a fundus camera and showing the retina clearly — and
+                        try again.
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.stop()
+
     blur_score = compute_blur_score(pil_img)
 
     if blur_score < BLUR_THRESHOLD:
