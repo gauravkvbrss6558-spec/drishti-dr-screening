@@ -190,6 +190,20 @@ def inject_css():
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap');
 
+            /* --------------------------------------------------------------
+               Force a light color scheme everywhere. Without this, a phone
+               or browser set to system dark mode makes Streamlit switch its
+               *native* widgets (selectbox, expander, etc.) to a dark theme,
+               while our custom HTML/CSS still assumes a fixed light/dark
+               split — producing invisible near-white-on-white or
+               near-black-on-black text in a few spots (patient records
+               list, language selector). Forcing color-scheme stops browsers
+               from auto-darkening native form controls.
+               -------------------------------------------------------------- */
+            :root, html, body {{
+                color-scheme: light only;
+            }}
+
             html, body, [class*="css"] {{
                 font-family: 'Inter', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, sans-serif;
             }}
@@ -429,6 +443,34 @@ def inject_css():
                 font-weight: 700 !important;
             }}
 
+            /* --------------------------------------------------------------
+               The selectbox LABEL ("भाषा / Language") was already fixed
+               above, but the *selected value* ("English") and dropdown
+               options render through BaseWeb's own internals, which follow
+               the browser/OS theme independently and were going
+               near-invisible in dark mode. Force them explicitly. */
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] div[data-baseweb="select"] {{
+                background-color: #FFFFFF !important;
+                border-radius: 10px !important;
+                border: 1px solid {BORDER} !important;
+            }}
+            [data-testid="stSidebar"] [data-testid="stSelectbox"] div[data-baseweb="select"] * {{
+                color: {INK} !important;
+                fill: {INK} !important;
+                opacity: 1 !important;
+            }}
+            div[data-baseweb="popover"] ul[role="listbox"] {{
+                background-color: #FFFFFF !important;
+            }}
+            div[data-baseweb="popover"] ul[role="listbox"] li {{
+                color: {INK} !important;
+                background-color: #FFFFFF !important;
+                opacity: 1 !important;
+            }}
+            div[data-baseweb="popover"] ul[role="listbox"] li:hover {{
+                background-color: {TEAL_SOFT} !important;
+            }}
+
             /* Section headers */
             .section-label {{
                 font-size: 0.78rem;
@@ -644,6 +686,39 @@ def inject_css():
                 border: 1px solid rgba(255,255,255,0.08);
                 border-radius: 12px;
                 box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+            }}
+
+            /* --------------------------------------------------------------
+               Patient record cards get their OWN fixed-color class instead
+               of reusing .step-item. .step-item's colors (#DCE4EC text on
+               near-transparent background) are tuned for sitting directly
+               on the dark navy sidebar. On mobile dark mode, Streamlit's
+               native expander can render with a light/white surface, which
+               left that near-white text invisible. record-item hardcodes a
+               white card + dark ink text that can't be flipped by any
+               ambient theme. */
+            .record-item {{
+                background: #FFFFFF !important;
+                border: 1px solid {BORDER};
+                border-radius: 10px;
+                padding: 0.6rem 0.75rem;
+                margin-bottom: 0.7rem;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+            }}
+            .record-item .rec-name {{
+                color: {INK} !important;
+                font-weight: 700;
+                font-size: 0.88rem;
+            }}
+            .record-item .rec-id {{
+                color: {MUTED} !important;
+                font-weight: 400;
+            }}
+            .record-item .rec-meta {{
+                color: {INK_SOFT} !important;
+                font-size: 0.78rem;
+                opacity: 0.9;
+                margin-top: 0.15rem;
             }}
 
             /* Native buttons app-wide get a soft embossed 3D press */
@@ -1213,10 +1288,10 @@ def render_sidebar():
                     patient_display_name = r["patient_name"] or "—"
                     id_display = r["patient_id"] or t("no_id_label")
                     st.markdown(
-                        f'<div class="step-item" style="flex-direction:column;align-items:flex-start;gap:0.15rem;">'
-                        f'<div style="font-weight:700;">{patient_display_name} '
-                        f'<span style="opacity:0.65;font-weight:400;">({id_display})</span></div>'
-                        f'<div style="font-size:0.78rem;opacity:0.85;">{r["timestamp"]} · {t("grade_word")} {r["grade"]} — '
+                        f'<div class="record-item">'
+                        f'<div class="rec-name">{patient_display_name} '
+                        f'<span class="rec-id">({id_display})</span></div>'
+                        f'<div class="rec-meta">{r["timestamp"]} · {t("grade_word")} {r["grade"]} — '
                         f'{r["severity_label"]} · {r["confidence"]}%</div></div>',
                         unsafe_allow_html=True,
                     )
