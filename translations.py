@@ -87,6 +87,9 @@ TRANSLATIONS = {
         # --- Upload section ---
         "upload_section_label": "Upload fundus image",
         "upload_prompt": "Drop a JPG or PNG retina photo here",
+        "upload_mode_file": "Choose from files",
+        "upload_mode_camera": "Use camera",
+        "camera_prompt": "Point the camera at the fundus image and capture",
 
         # --- Image quality checks ---
         "not_fundus_title": "This doesn't look like a retinal photo",
@@ -224,6 +227,9 @@ TRANSLATIONS = {
         # --- Upload section ---
         "upload_section_label": "फंडस छवि अपलोड करें",
         "upload_prompt": "यहाँ JPG या PNG रेटिना फोटो डालें",
+        "upload_mode_file": "फ़ाइल से चुनें",
+        "upload_mode_camera": "कैमरा इस्तेमाल करें",
+        "camera_prompt": "फंडस छवि पर कैमरा फोकस करें और कैप्चर करें",
 
         # --- Image quality checks ---
         "not_fundus_title": "यह रेटिना फोटो जैसी नहीं लगती",
