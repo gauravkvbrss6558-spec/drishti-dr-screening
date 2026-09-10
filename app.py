@@ -403,6 +403,44 @@ def inject_css():
                 transform: translateY(1px);
                 box-shadow: 0 1px 0 {BORDER}, 0 2px 4px rgba(11,30,51,0.1) !important;
             }}
+
+            /* File vs. camera tabs inside the upload card */
+            .upload-card [data-testid="stTabs"] [data-baseweb="tab-list"] {{
+                gap: 0.4rem;
+                border-bottom: 1px solid {BORDER};
+            }}
+            .upload-card [data-testid="stTabs"] button[data-baseweb="tab"] {{
+                font-weight: 600;
+                font-size: 0.88rem;
+                color: {MUTED};
+            }}
+            .upload-card [data-testid="stTabs"] button[aria-selected="true"] {{
+                color: {CORAL_DARK};
+            }}
+            .upload-card [data-testid="stTabs"] [data-baseweb="tab-highlight"] {{
+                background-color: {CORAL} !important;
+            }}
+            /* Camera capture widget — round action button + rounded video frame,
+               matching the dashed-well treatment used for the file dropzone. */
+            .upload-card [data-testid="stCameraInput"] video,
+            .upload-card [data-testid="stCameraInput"] img {{
+                border-radius: 14px !important;
+                border: 1.5px solid {BORDER} !important;
+            }}
+            .upload-card [data-testid="stCameraInput"] [data-testid="stCameraInputWindow"] {{
+                border-radius: 14px !important;
+                overflow: hidden;
+                background: #FFFEFB !important;
+            }}
+            .upload-card [data-testid="stCameraInputButton"] button,
+            .upload-card [data-testid="stCameraInput"] button {{
+                background: linear-gradient(180deg, #FF8F6B 0%, {CORAL} 55%, {CORAL_DARK} 100%) !important;
+                border: none !important;
+                color: white !important;
+                font-weight: 600 !important;
+                border-radius: 12px !important;
+                box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 4px 0 {CORAL_DARK}, 0 10px 18px rgba(217,84,46,0.35) !important;
+            }}
             .upload-hint {{
                 display: flex;
                 align-items: center;
@@ -1400,11 +1438,23 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown(f'<div class="section-label">{t("upload_section_label")}</div>', unsafe_allow_html=True)
 st.markdown('<div class="upload-card" data-tilt="4">', unsafe_allow_html=True)
-uploaded_file = st.file_uploader(
-    t("upload_prompt"),
-    type=["jpg", "jpeg", "png"],
-    label_visibility="collapsed",
-)
+
+tab_file, tab_camera = st.tabs([f"📁 {t('upload_mode_file')}", f"📷 {t('upload_mode_camera')}"])
+with tab_file:
+    file_upload = st.file_uploader(
+        t("upload_prompt"),
+        type=["jpg", "jpeg", "png"],
+        label_visibility="collapsed",
+    )
+with tab_camera:
+    camera_capture = st.camera_input(
+        t("camera_prompt"),
+        label_visibility="collapsed",
+    )
+
+# Camera takes priority when both are present (i.e. the health worker just
+# captured a fresh photo after having an older file already selected).
+uploaded_file = camera_capture if camera_capture is not None else file_upload
 st.markdown('</div>', unsafe_allow_html=True)
 
 if uploaded_file is not None and not patient_id.strip():
