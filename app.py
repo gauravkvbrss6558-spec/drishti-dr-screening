@@ -1014,6 +1014,30 @@ def _np_img_to_bytes(img_array):
     return buf
 
 
+def _pdf_safe(text) -> str:
+    """
+    Make text safe for FPDF's core fonts (Helvetica etc.), which only
+    support Latin-1. Without this, any em dash, curly quote, emoji, or
+    non-Latin script (e.g. a patient name typed in Hindi) raises
+    FPDFUnicodeEncodingException and crashes report generation.
+    """
+    if text is None:
+        return ""
+    text = str(text)
+    replacements = {
+        "\u2014": "-", "\u2013": "-",   # em dash, en dash
+        "\u2018": "'", "\u2019": "'",   # curly single quotes
+        "\u201c": '"', "\u201d": '"',   # curly double quotes
+        "\u2026": "...",                 # ellipsis
+        "\u2022": "-",                    # bullet
+    }
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+    # Last-resort safety net: silently drop anything still outside Latin-1
+    # instead of crashing the whole report.
+    return text.encode("latin-1", "ignore").decode("latin-1")
+
+
 def generate_pdf_report(
     patient_id,
     patient_name,
@@ -1048,9 +1072,9 @@ def generate_pdf_report(
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 8, "Patient Details", ln=True)
     pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 7, f"Patient Name: {patient_name.strip() or '-'}", ln=True)
-    pdf.cell(0, 7, f"Patient ID: {patient_id.strip() or '-'}", ln=True)
-    pdf.cell(0, 7, f"Report generated: {datetime.now().strftime('%d %b %Y, %I:%M %p')}", ln=True)
+    pdf.cell(0, 7, _pdf_safe(f"Patient Name: {patient_name.strip() or '-'}"), ln=True)
+    pdf.cell(0, 7, _pdf_safe(f"Patient ID: {patient_id.strip() or '-'}"), ln=True)
+    pdf.cell(0, 7, _pdf_safe(f"Report generated: {datetime.now().strftime('%d %b %Y, %I:%M %p')}"), ln=True)
     pdf.ln(4)
 
     # --- Result summary -----------------------------------------------------
@@ -1060,10 +1084,10 @@ def generate_pdf_report(
     pdf.set_fill_color(*sev_rgb)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 10, f"  {style['label']} - Grade {pred_class}: {severity_label}", ln=True, fill=True)
+    pdf.cell(0, 10, _pdf_safe(f"  {style['label']} - Grade {pred_class}: {severity_label}"), ln=True, fill=True)
     pdf.set_text_color(20, 20, 20)
     pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 8, f"Model confidence: {confidence:.1f}%", ln=True)
+    pdf.cell(0, 8, _pdf_safe(f"Model confidence: {confidence:.1f}%"), ln=True)
     pdf.ln(2)
 
     # --- Images side by side -------------------------------------------------
@@ -1084,7 +1108,7 @@ def generate_pdf_report(
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 8, "Recommended Action", ln=True)
     pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 6.5, recommendation)
+    pdf.multi_cell(0, 6.5, _pdf_safe(recommendation))
     pdf.ln(4)
 
     # --- Disclaimer -------------------------------------------------------
@@ -1092,9 +1116,11 @@ def generate_pdf_report(
     pdf.set_text_color(110, 90, 20)
     pdf.multi_cell(
         0, 5,
-        "Disclaimer: This is an AI-assisted screening tool, intended to support - not replace - "
-        "clinical judgment. Always have a qualified ophthalmologist review this result before any "
-        "treatment decisions."
+        _pdf_safe(
+            "Disclaimer: This is an AI-assisted screening tool, intended to support - not replace - "
+            "clinical judgment. Always have a qualified ophthalmologist review this result before any "
+            "treatment decisions."
+        )
     )
 
     return bytes(pdf.output(dest="S"))
@@ -1445,6 +1471,11 @@ if uploaded_file is not None:
     style = SEVERITY_STYLE[pred_class]
     style_label = t(style["label_key"])
     recommendation_text = t(f"rec_{pred_class}")
+    # The PDF report always renders in English (see generate_pdf_report's
+    # docstring) since FPDF's core fonts can't render Devanagari/Indic
+    # scripts -- build a separate English-only copy for it regardless of
+    # the current UI language.
+    recommendation_text_pdf = t(f"rec_{pred_class}", lang_override="en")
 
     save_patient_record(patient_id, patient_name, pred_class, severity_label, confidence)
 
@@ -1453,7 +1484,7 @@ if uploaded_file is not None:
     # unrelated widget interactions doesn't reopen the popup every time).
     report_pdf_bytes = generate_pdf_report(
         patient_id, patient_name, pred_class, severity_label, confidence,
-        {**style, "label": style_label}, recommendation_text, processed, overlay,
+        {**style, "label": style_label}, recommendation_text_pdf, processed, overlay,
     )
     safe_id = (patient_id.strip() or "patient").replace(" ", "_")
     st.session_state["report_pdf_bytes"] = report_pdf_bytes

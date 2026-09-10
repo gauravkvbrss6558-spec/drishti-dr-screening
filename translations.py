@@ -135,10 +135,10 @@ TRANSLATIONS = {
         ),
         "rec_3": (
             "Severe non-proliferative DR detected. Recommend prompt referral to an "
-            "ophthalmologist within 1 month — risk of progression is significant."
+            "ophthalmologist within 1 month - risk of progression is significant."
         ),
         "rec_4": (
-            "Proliferative DR detected. Recommend URGENT referral to an ophthalmologist — "
+            "Proliferative DR detected. Recommend URGENT referral to an ophthalmologist - "
             "this stage carries a high risk of vision loss without timely treatment."
         ),
 
@@ -272,10 +272,10 @@ TRANSLATIONS = {
         ),
         "rec_3": (
             "गंभीर नॉन-प्रोलिफेरेटिव DR पाई गई। 1 महीने के भीतर तुरंत नेत्र विशेषज्ञ के पास "
-            "रेफर करने की सलाह दी जाती है — बढ़ने का जोखिम अधिक है।"
+            "रेफर करने की सलाह दी जाती है - बढ़ने का जोखिम अधिक है।"
         ),
         "rec_4": (
-            "प्रोलिफेरेटिव DR पाई गई। तुरंत नेत्र विशेषज्ञ के पास आपातकालीन रेफरल की सलाह दी जाती है — "
+            "प्रोलिफेरेटिव DR पाई गई। तुरंत नेत्र विशेषज्ञ के पास आपातकालीन रेफरल की सलाह दी जाती है - "
             "समय पर इलाज न होने पर दृष्टि खोने का उच्च जोखिम है।"
         ),
 
@@ -317,13 +317,18 @@ TRANSLATIONS = {
 }
 
 
-def t(key: str) -> str:
+def t(key: str, lang_override: str = None) -> str:
     """
     Translation lookup. Returns the string for the current session language
     (st.session_state.lang), falling back to English if the key or language
     is missing so the app never crashes on an incomplete translation.
+
+    Pass lang_override="en" to force English regardless of the UI language
+    -- used for the downloadable PDF report, whose core fonts can only
+    render Latin-1 and would crash (FPDFUnicodeEncodingException) on
+    Devanagari or other Indic-script text.
     """
-    lang = st.session_state.get("lang", "en")
+    lang = lang_override or st.session_state.get("lang", "en")
     return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(
         key, TRANSLATIONS["en"].get(key, key)
     )
