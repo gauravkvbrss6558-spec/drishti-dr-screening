@@ -21,6 +21,7 @@ import io
 import json
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import cv2
 import numpy as np
@@ -78,6 +79,11 @@ if "lang" not in st.session_state:
 MODEL_PATH = "dr_model_final.pth"
 METADATA_PATH = "model_metadata.json"
 EYE_DIAGRAM_PATH = "assets/eye_anatomy.png"
+
+# Streamlit Cloud's server runs in UTC, not India time — every timestamp we
+# show or store must be explicitly converted to IST, or it reads 5.5 hours
+# behind the wall clock for a user in India.
+IST = ZoneInfo("Asia/Kolkata")
 
 # Local CSV log of every screening, keyed by patient ID/name — lets a health
 # worker look up a patient's past screenings without re-typing anything.
@@ -881,6 +887,25 @@ def inject_css():
             }}
             .side-rail .rail-chip:nth-child(2) {{ animation-delay: 1.3s; }}
             .side-rail .rail-chip:nth-child(3) {{ animation-delay: 2.6s; }}
+
+            /* ------------------------------------------------------------
+               FIX: layering order. The upload/patient cards must always sit
+               above the hero's floating glass orbs and the fixed-position
+               side rails, otherwise those decorative elements can end up
+               capturing clicks/taps meant for the tabs, file uploader, or
+               camera button underneath them (reported as a tab/section
+               that "won't open" on some phones).
+               ------------------------------------------------------------ */
+            .upload-card {{
+                position: relative !important;
+                z-index: 5 !important;
+            }}
+            .hero {{
+                z-index: 1 !important;
+            }}
+            .side-rail {{
+                z-index: -1 !important;
+            }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -1010,7 +1035,7 @@ def save_patient_record(patient_id, patient_name, pred_class, severity_label, co
         if not file_exists:
             writer.writeheader()
         writer.writerow({
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
             "patient_id": patient_id.strip(),
             "patient_name": patient_name.strip(),
             "grade": pred_class,
@@ -1112,7 +1137,7 @@ def generate_pdf_report(
     pdf.set_font("Helvetica", "", 11)
     pdf.cell(0, 7, _pdf_safe(f"Patient Name: {patient_name.strip() or '-'}"), ln=True)
     pdf.cell(0, 7, _pdf_safe(f"Patient ID: {patient_id.strip() or '-'}"), ln=True)
-    pdf.cell(0, 7, _pdf_safe(f"Report generated: {datetime.now().strftime('%d %b %Y, %I:%M %p')}"), ln=True)
+    pdf.cell(0, 7, _pdf_safe(f"Report generated: {datetime.now(IST).strftime('%d %b %Y, %I:%M %p')} IST"), ln=True)
     pdf.ln(4)
 
     # --- Result summary -----------------------------------------------------
@@ -1508,13 +1533,37 @@ if uploaded_file is not None:
         )
         st.stop()
 
+    # --------------------------------------------------------------------
+    # FIX: wrap model inference in try/except. Previously, if anything
+    # went wrong here (corrupt image, server memory limits, a model
+    # error), Streamlit would just hang inside the spinner with no
+    # feedback — this is the "image gets stuck" bug. Now the user always
+    # gets a clear message instead of an endless spinner.
+    # --------------------------------------------------------------------
     with st.spinner(t("analyzing_spinner")):
-        processed = preprocess_image(pil_img, img_size)
-        tensor = infer_tfms(processed).unsqueeze(0)
-        tensor.requires_grad_(True)
+        try:
+            processed = preprocess_image(pil_img, img_size)
+            tensor = infer_tfms(processed).unsqueeze(0)
+            tensor.requires_grad_(True)
 
-        cam, pred_class, probs = gradcam.generate(tensor)
-        overlay = overlay_heatmap(processed, cam)
+            cam, pred_class, probs = gradcam.generate(tensor)
+            overlay = overlay_heatmap(processed, cam)
+        except Exception as e:
+            st.markdown(
+                f"""
+                <div class="low-conf-warning">
+                    <div>⚠️</div>
+                    <div>
+                        <div class="lcw-title">Processing failed</div>
+                        <div class="lcw-body">Something went wrong while analyzing this image.
+                        Please try a different photo, or reload the page and try again.
+                        (Error: {str(e)[:120]})</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.stop()
 
     severity_label = class_names[pred_class]
     confidence = probs[pred_class] * 100
@@ -1529,9 +1578,9 @@ if uploaded_file is not None:
 
     save_patient_record(patient_id, patient_name, pred_class, severity_label, confidence)
 
-    # Build the downloadable PDF report and pop up a "download it" dialog once
-    # per new result (guarded by a signature so re-running the script on
-    # unrelated widget interactions doesn't reopen the popup every time).
+    # Build the downloadable PDF report now so it's ready by the time the
+    # popup is shown (see the dialog trigger at the very end of this
+    # block) — but DO NOT open the dialog yet.
     report_pdf_bytes = generate_pdf_report(
         patient_id, patient_name, pred_class, severity_label, confidence,
         {**style, "label": style_label}, recommendation_text_pdf, processed, overlay,
@@ -1539,11 +1588,6 @@ if uploaded_file is not None:
     safe_id = (patient_id.strip() or "patient").replace(" ", "_")
     st.session_state["report_pdf_bytes"] = report_pdf_bytes
     st.session_state["report_filename"] = f"Drishti_Report_{safe_id}.pdf"
-
-    result_signature = f"{uploaded_file.name}-{uploaded_file.size}-{patient_id.strip()}"
-    if st.session_state.get("report_popup_shown_for") != result_signature:
-        st.session_state["report_popup_shown_for"] = result_signature
-        show_report_download_dialog()
 
     st.markdown(
         f'<div class="section-label">{t("patient_section_label")}</div>'
@@ -1618,6 +1662,20 @@ if uploaded_file is not None:
         """,
         unsafe_allow_html=True,
     )
+
+    # --------------------------------------------------------------------
+    # FIX: the "download report" popup now opens LAST, after everything
+    # above (image, result card, download button, disclaimer) has already
+    # rendered. Previously this dialog was triggered right after the PDF
+    # bytes were built -- and because Streamlit dialogs block the rest of
+    # the script from rendering until they're closed, the result below it
+    # looked "stuck"/invisible, and the popup's own Close button appeared
+    # unresponsive since the page hadn't actually finished loading yet.
+    # --------------------------------------------------------------------
+    result_signature = f"{uploaded_file.name}-{uploaded_file.size}-{patient_id.strip()}"
+    if st.session_state.get("report_popup_shown_for") != result_signature:
+        st.session_state["report_popup_shown_for"] = result_signature
+        show_report_download_dialog()
 else:
     st.markdown(
         f"""
