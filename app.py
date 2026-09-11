@@ -1044,6 +1044,17 @@ def save_patient_record(patient_id, patient_name, pred_class, severity_label, co
         })
 
 
+def clear_patient_records():
+    """Permanently delete the local patient records CSV, if it exists.
+
+    Used by the sidebar's "Clear all history" button so a health worker
+    (or whoever is demoing/testing the app) can wipe stored patient data
+    and keep the database clean, without needing server/file access.
+    """
+    if os.path.exists(RECORDS_PATH):
+        os.remove(RECORDS_PATH)
+
+
 def load_patient_records(search=""):
     if not os.path.exists(RECORDS_PATH):
         return []
@@ -1402,6 +1413,36 @@ def render_sidebar():
                     )
         else:
             st.caption(t("no_records_yet") if not search_query else t("no_matches_found"))
+
+        # ------------------------------------------------------------
+        # Clear all history — lets a health worker wipe every saved
+        # patient record (and keep the underlying CSV database clean)
+        # without needing server access. Two-step confirmation guards
+        # against an accidental tap deleting real patient data.
+        # ------------------------------------------------------------
+        if records:
+            if st.session_state.get("confirm_clear_records"):
+                st.markdown(
+                    '<div style="background:rgba(194,54,10,0.12); border:1px solid rgba(194,54,10,0.4); '
+                    'border-radius:10px; padding:0.7rem 0.8rem; margin-top:0.6rem; font-size:0.82rem; '
+                    'color:#F3C9BE;">⚠️ This will permanently delete all saved patient records. '
+                    'This cannot be undone.</div>',
+                    unsafe_allow_html=True,
+                )
+                cc1, cc2 = st.columns(2)
+                with cc1:
+                    if st.button("Yes, delete", key="confirm_delete_records_btn", use_container_width=True):
+                        clear_patient_records()
+                        st.session_state["confirm_clear_records"] = False
+                        st.rerun()
+                with cc2:
+                    if st.button("Cancel", key="cancel_delete_records_btn", use_container_width=True):
+                        st.session_state["confirm_clear_records"] = False
+                        st.rerun()
+            else:
+                if st.button("🗑️ Clear all history", key="clear_records_btn", use_container_width=True):
+                    st.session_state["confirm_clear_records"] = True
+                    st.rerun()
 
         st.markdown("---")
         st.caption(t("sidebar_footer"))
