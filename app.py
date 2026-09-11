@@ -849,10 +849,10 @@ def inject_css():
                 z-index: 999999 !important;
                 background: {CARD} !important;
                 border: 1px solid {BORDER} !important;
-                border-radius: 10px !important;
+                border-radius: 12px !important;
                 box-shadow: 0 6px 16px rgba(11,30,51,0.18) !important;
-                width: 40px !important;
-                height: 40px !important;
+                width: 56px !important;
+                height: 56px !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
@@ -863,6 +863,10 @@ def inject_css():
                 width: 100% !important;
                 height: 100% !important;
                 pointer-events: auto !important;
+            }}
+            [data-testid="stSidebarCollapsedControl"] svg {{
+                width: 30px !important;
+                height: 30px !important;
             }}
             /* The header bar Streamlit draws behind that control can also
                intercept taps on mobile — make sure it never blocks clicks
@@ -878,8 +882,12 @@ def inject_css():
                 [data-testid="stSidebarCollapsedControl"] {{
                     top: calc(env(safe-area-inset-top, 0px) + 10px) !important;
                     left: 10px !important;
-                    width: 44px !important;
-                    height: 44px !important;
+                    width: 60px !important;
+                    height: 60px !important;
+                }}
+                [data-testid="stSidebarCollapsedControl"] svg {{
+                    width: 32px !important;
+                    height: 32px !important;
                 }}
             }}
 
