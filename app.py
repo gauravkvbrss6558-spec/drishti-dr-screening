@@ -830,68 +830,6 @@ def inject_css():
             footer {{visibility: hidden;}}
 
             /* ------------------------------------------------------------
-               FIX: mobile sidebar "»" toggle is unreachable / unclickable.
-
-               Streamlit pins the collapsed-sidebar expand control (the "»"
-               chevron) to the very top-left corner of the viewport. On a
-               phone's mobile browser that spot sits underneath the OS
-               status bar / notch (clock, wifi, notification icons), so the
-               button is either partly hidden behind that bar or too close
-               to the screen edge for a touch to register. Push it down
-               below the safe area, give it a real square tap target, and
-               raise its stacking order above everything else so it's
-               always reachable, on every screen size.
-               ------------------------------------------------------------ */
-            [data-testid="stSidebarCollapsedControl"] {{
-                position: fixed !important;
-                top: calc(env(safe-area-inset-top, 0px) + 48px) !important;
-                left: 14px !important;
-                z-index: 999999 !important;
-                background: {CARD} !important;
-                border: 1px solid {BORDER} !important;
-                border-radius: 12px !important;
-                box-shadow: 0 6px 16px rgba(11,30,51,0.18) !important;
-                width: 56px !important;
-                height: 56px !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                touch-action: manipulation !important;
-                pointer-events: auto !important;
-            }}
-            [data-testid="stSidebarCollapsedControl"] button {{
-                width: 100% !important;
-                height: 100% !important;
-                pointer-events: auto !important;
-            }}
-            [data-testid="stSidebarCollapsedControl"] svg {{
-                width: 30px !important;
-                height: 30px !important;
-            }}
-            /* The header bar Streamlit draws behind that control can also
-               intercept taps on mobile — make sure it never blocks clicks
-               on anything sitting above it. */
-            [data-testid="stHeader"] {{
-                pointer-events: none !important;
-                background: transparent !important;
-            }}
-            [data-testid="stHeader"] * {{
-                pointer-events: auto !important;
-            }}
-            @media (max-width: 700px) {{
-                [data-testid="stSidebarCollapsedControl"] {{
-                    top: calc(env(safe-area-inset-top, 0px) + 44px) !important;
-                    left: 10px !important;
-                    width: 60px !important;
-                    height: 60px !important;
-                }}
-                [data-testid="stSidebarCollapsedControl"] svg {{
-                    width: 32px !important;
-                    height: 32px !important;
-                }}
-            }}
-
-            /* ------------------------------------------------------------
                Side rails — the empty margins on wide screens (either side
                of the centered 1080px content) get a few floating chips
                tied to the problem/solution, plus a faint vein-line motif,
