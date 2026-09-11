@@ -844,7 +844,7 @@ def inject_css():
                ------------------------------------------------------------ */
             [data-testid="stSidebarCollapsedControl"] {{
                 position: fixed !important;
-                top: calc(env(safe-area-inset-top, 0px) + 14px) !important;
+                top: calc(env(safe-area-inset-top, 0px) + 48px) !important;
                 left: 14px !important;
                 z-index: 999999 !important;
                 background: {CARD} !important;
@@ -880,7 +880,7 @@ def inject_css():
             }}
             @media (max-width: 700px) {{
                 [data-testid="stSidebarCollapsedControl"] {{
-                    top: calc(env(safe-area-inset-top, 0px) + 10px) !important;
+                    top: calc(env(safe-area-inset-top, 0px) + 44px) !important;
                     left: 10px !important;
                     width: 60px !important;
                     height: 60px !important;
