@@ -47,7 +47,7 @@ TRANSLATIONS = {
 
         # --- Sidebar ---
         "app_title": "👁️ Drishti",
-        "app_subtitle": "SIH26038 · Explainable AI for Rural Screening",
+        "app_subtitle": "Explainable AI for Rural Screening",
         "how_it_works": "HOW IT WORKS",
         "step_1": "Upload a retinal fundus photo",
         "step_2": "AI analyzes it in seconds",
@@ -68,7 +68,7 @@ TRANSLATIONS = {
         "sidebar_footer": "Built for non-specialist health workers (e.g. ASHA workers) to enable faster, explainable DR triage in low-resource settings.",
 
         # --- Hero ---
-        "hero_tag": "Smart India Hackathon 2026 — Clean &amp; Green Technology",
+        "hero_tag": "AI for Early Diabetic Retinopathy Screening",
         "hero_title": "See what the <em>retina</em> reveals",
         "hero_body": "Upload a retinal fundus photo to get an instant, explainable AI screening — built for community health workers where ophthalmologists are hard to reach.",
 
@@ -187,7 +187,7 @@ TRANSLATIONS = {
 
         # --- Sidebar ---
         "app_title": "👁️ दृष्टि",
-        "app_subtitle": "SIH26038 · ग्रामीण जांच के लिए व्याख्येय AI",
+        "app_subtitle": "ग्रामीण जांच के लिए व्याख्येय AI",
         "how_it_works": "यह कैसे काम करता है",
         "step_1": "रेटिना फंडस फोटो अपलोड करें",
         "step_2": "AI कुछ ही सेकंड में विश्लेषण करता है",
@@ -208,7 +208,7 @@ TRANSLATIONS = {
         "sidebar_footer": "कम संसाधन वाले क्षेत्रों में तेज़, व्याख्येय DR जांच के लिए गैर-विशेषज्ञ स्वास्थ्य कर्मियों (जैसे आशा कार्यकर्ता) हेतु बनाया गया।",
 
         # --- Hero ---
-        "hero_tag": "स्मार्ट इंडिया हैकाथॉन 2026 — स्वच्छ एवं हरित प्रौद्योगिकी",
+        "hero_tag": "डायबिटिक रेटिनोपैथी की शुरुआती जांच के लिए AI",
         "hero_title": "देखें <em>रेटिना</em> क्या बताता है",
         "hero_body": "तुरंत, व्याख्येय AI जांच पाने के लिए रेटिना फंडस फोटो अपलोड करें — उन सामुदायिक स्वास्थ्य कर्मियों के लिए बनाया गया जहाँ नेत्र विशेषज्ञ आसानी से उपलब्ध नहीं हैं।",
 
