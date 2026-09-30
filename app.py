@@ -1,6 +1,6 @@
 """
 Explainable AI for Diabetic Retinopathy Screening — Demo Interface
-SIH26038 · MathWorks · Clean & Green Technology
+Drishti · AI-assisted diabetic retinopathy screening
 
 Run locally after placing `dr_model_final.pth` and `model_metadata.json`
 (exported from the Kaggle notebook) in the same folder as this file, and
@@ -927,7 +927,7 @@ def render_side_rails():
     right_items = [
         ("🔍", "Explainable AI — see exactly what it looked at"),
         ("⚡", "A screening result in seconds, not weeks"),
-        ("🌱", "Smart India Hackathon 2026 · Clean &amp; Green Tech"),
+        ("🌱", "Built for low-resource healthcare settings"),
     ]
 
     vein_svg = """
