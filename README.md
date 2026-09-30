@@ -1,7 +1,5 @@
 # DRISHTI — Explainable AI for Diabetic Retinopathy Screening
 
-**Smart India Hackathon 2026**
-
 DRISHTI is an AI-powered screening tool that analyzes retinal fundus images to detect and grade Diabetic Retinopathy (DR), designed for use by non-specialist health workers (e.g. ASHA workers) in low-resource, rural settings where ophthalmologists are hard to reach.
 
 Upload a fundus image → get an instant 5-level DR grade, a confidence score, and a Grad-CAM heatmap explaining which regions of the retina influenced the prediction.
